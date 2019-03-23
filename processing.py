@@ -20,7 +20,13 @@ def differentiateAndRescale(phase):
 
     dt_phase = np.diff(phase)
     dk_phase = np.diff(phase, axis=0)
-    time_shift = 2 * np.pi * CONSTS.HOP_SIZE / CONSTS.WINDOW_SIZE * np.arange(dt_phase.shape[-1])
+
+    #pad the differences to have the same shape as the phase
+
+    dt_phase = np.concatenate([np.zeros((phase.shape[0], phase.shape[1], 1)), dt_phase], axis=-1)
+    dk_phase = np.concatenate([np.zeros((1, phase.shape[1], phase.shape[2])), dk_phase], axis=0)
+
+    time_shift = 2 * np.pi * CONSTS.HOP_SIZE / CONSTS.WINDOW_SIZE * np.arange(phase.shape[0])
     dt_phase = (dt_phase.T + time_shift).T
     dk_phase = dk_phase + np.pi
 
@@ -36,35 +42,55 @@ def preprocess(audio_track):
     return (amplitude,) + differentiateAndRescale(phase)
 
 
-def make_train_input(tracks, context_length):
+def extract_context(index, array, context_length=CONSTS.CONTEXT_SIZE):
+    desired_shape = array.shape[:2]
+    time_frames = array.shape[-1]
+    if index < context_length:
+        # pad with zeroes to fill context
+        return np.concatenate((
+            np.zeros((desired_shape + (context_length - index,))),
+            array[:, :, 0:index + context_length + 1]), axis=-1)
+
+    elif index + context_length < time_frames:
+        return array[:, :, index - context_length:index + context_length + 1]
+
+    else:
+        return np.concatenate(
+            [array[:, :, index - context_length:],
+             np.zeros((desired_shape + (index + context_length - time_frames + 1 ,)))],
+            axis=-1)
+
+
+def make_train_input(tracks, context_length=CONSTS.CONTEXT_SIZE):
     amplitude_out = list()
     phase_out = list()
     for track in tracks:
-        amplitude, phase, dt_phase, dk_phase = preprocess(track.audio)
-        i = context_length
-        while i + context_length < dt_phase.shape[-1]:
-            amplitude_out.append(amplitude[:, :, i - context_length:i + context_length])
+        amplitude, _, dt_phase, dk_phase = preprocess(track.audio)
+        time_frames = amplitude.shape[-1]
+        amplitude_out = amplitude_out + [extract_context(i, amplitude, context_length) for i in range(time_frames)]
+        phase_out = phase_out + [np.concatenate((extract_context(i, dt_phase, context_length),
+                                                extract_context(i, dk_phase, context_length)), axis=1)
+                                 for i in range(time_frames)]
+    return [amplitude_out, phase_out]
 
-            dt_phase_out.append(dk[:, :, i - context_length:i + context_length])
-            dk_phase_out.append(amplitude[:, :, i - context_length:i + context_length])
-    return amplitude_out, dt_phase_out, dk_phase_out
 
-
-def make_train_data(tracks, context_length, target):
-    amplitude_out = list()
-    dt_phase_out = list()
-    dk_phase_out = list()
+def make_target_data(tracks, target, context_length=CONSTS.CONTEXT_SIZE):
+    amplitude_out = None
+    empty = True
     for track in tracks:
-        amplitude, phase, dt_phase, dk_phase = preprocess(track.targets[target].audio)
-        i = context_length
-        while i + context_length < dt_phase.shape[-1]:
-            amplitude_out.append(amplitude[:, :, i - context_length:i + context_length])
-            dt_phase_out.append(amplitude[:, :, i - context_length:i + context_length])
-            dk_phase_out.append(amplitude[:, :, i - context_length:i + context_length])
-    return amplitude_out, dt_phase_out, dk_phase_out
+        amplitude, _, _, _ = preprocess(track.targets[target].audio)
+        if empty:
+            amplitude_out = amplitude
+            empty = False
+        else:
+            amplitude_out = np.concatenate([amplitude_out, amplitude], axis=-1)
+
+    amplitude_out = amplitude_out.swapaxes(0, 2)
+    amplitude_out = amplitude_out.swapaxes(1, 2)
+    return amplitude_out
 
 
 def reconstruct(out_amplitude, out_phase):
     """reconstruct output from predicted amplitude and phase"""
-    return istft(out_amplitude * np.exp(1j * out_phase,fs=CONSTS.RATE), nperseg=CONSTS.WINDOW_SIZE,
+    return istft(out_amplitude * np.exp(1j * out_phase, fs=CONSTS.RATE), nperseg=CONSTS.WINDOW_SIZE,
                  noverlap=CONSTS.OVERLAP, freq_axis=0)
