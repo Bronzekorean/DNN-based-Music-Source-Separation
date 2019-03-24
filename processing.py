@@ -1,17 +1,22 @@
 from consts import CONSTS
 from scipy.signal import stft, istft, get_window
 import numpy as np
+import gc
 
-
-def fourierTransform(audio_track):
+def fourier_transform(audio_track):
+    """ extract amplitde and phase from scipy stft:
+        Returns:
+        ammplitude: fft amplitude
+        phase: fft phase"""
     _, _, transformed = stft(audio_track, fs=CONSTS.RATE, nperseg=CONSTS.WINDOW_SIZE, noverlap=CONSTS.OVERLAP, axis=0)
 
     amplitude, phase = np.absolute(transformed), np.angle(transformed)
     return amplitude, phase
 
 
-def differentiateAndRescale(phase):
-    """Make data from audio recoding
+
+def differentiate_rescale(phase):
+    """ Make data from audio recoding
         args:
         audio_track numpy array stereo mixture shape (num_samples, 2)
         Returns:
@@ -34,51 +39,55 @@ def differentiateAndRescale(phase):
     dt_phase = np.mod(dt_phase + np.pi, 2 * np.pi) - np.pi
     dk_phase = np.mod(dk_phase + np.pi, 2 * np.pi) - np.pi
 
-    return phase, dt_phase, dk_phase
+    return np.concatenate((dt_phase, dk_phase), axis=1)
 
 
-def preprocess(audio_track):
-    amplitude, phase = fourierTransform(audio_track)
-    return (amplitude,) + differentiateAndRescale(phase)
+def make_features(tracks):
+    """Returns amplitude, phase  and phase derivatives of stft of track objects"""
+    out = list()
+    for track in tracks:
+        amplitude, phase = fourier_transform(track.audio)
+        out.append((amplitude,differentiate_rescale(phase)))
+    return out
 
 
-def extract_context(index, array, context_length=CONSTS.CONTEXT_SIZE):
-    desired_shape = array.shape[:2]
-    time_frames = array.shape[-1]
-    if index < context_length:
-        # pad with zeroes to fill context
-        return np.concatenate((
-            np.zeros((desired_shape + (context_length - index,))),
-            array[:, :, 0:index + context_length + 1]), axis=-1)
-
-    elif index + context_length < time_frames:
-        return array[:, :, index - context_length:index + context_length + 1]
-
-    else:
-        return np.concatenate(
-            [array[:, :, index - context_length:],
-             np.zeros((desired_shape + (index + context_length - time_frames + 1 ,)))],
-            axis=-1)
+def pad_and_delete(feature_list, context=CONSTS.CONTEXT_SIZE):
+    """ pads the current features list and deletes it
+        Returns:
+        times_features: original time frames number
+        new_features_list: list of padded features
+    """
+    time_frames_list = list()
+    new_features_list = list()
+    for features in feature_list:
+        time_frames = features[0].shape[-1]
+        time_frames_list.append(time_frames)
+        new_features = list()
+        for feature in features:
+            feature_shape = feature.shape
+            new_features.append(np.concatenate([np.zeros(feature_shape[:2] + (context, )), feature, np.zeros(feature_shape[:2] + (context,))], axis=-1))
+        new_features_list.append(new_features)
+    del feature_list; gc.collect()
+    return time_frames_list, new_features_list
 
 
 def make_train_input(tracks, context_length=CONSTS.CONTEXT_SIZE):
+    time_frames_list, padded_features = pad_and_delete(make_features(tracks), context_length)
     amplitude_out = list()
     phase_out = list()
-    for track in tracks:
-        amplitude, _, dt_phase, dk_phase = preprocess(track.audio)
-        time_frames = amplitude.shape[-1]
-        amplitude_out = amplitude_out + [extract_context(i, amplitude, context_length) for i in range(time_frames)]
-        phase_out = phase_out + [np.concatenate((extract_context(i, dt_phase, context_length),
-                                                extract_context(i, dk_phase, context_length)), axis=1)
-                                 for i in range(time_frames)]
+    for time, features in zip(time_frames_list, padded_features):
+        amplitude, phase_derivatives = features
+        for i in range(time):
+            amplitude_out.append(amplitude[:, :, i: i + 2 * context_length + 1])
+            phase_out.append(phase_derivatives[:, :, i: i + 2 * context_length + 1])
     return [amplitude_out, phase_out]
 
 
-def make_target_data(tracks, target, context_length=CONSTS.CONTEXT_SIZE):
+def make_target_data(tracks, target):
     amplitude_out = None
     empty = True
     for track in tracks:
-        amplitude, _, _, _ = preprocess(track.targets[target].audio)
+        amplitude, _ = fourier_transform(track.targets[target].audio)
         if empty:
             amplitude_out = amplitude
             empty = False
