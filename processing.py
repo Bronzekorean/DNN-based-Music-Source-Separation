@@ -70,7 +70,7 @@ def pad_and_delete(feature_list, context=CONSTS.CONTEXT_SIZE):
             feature_shape = feature.shape
             new_features.append(np.concatenate([np.zeros(feature_shape[:2] + (context, )), feature, np.zeros(feature_shape[:2] + (context,))], axis=-1))
         new_features_list.append(new_features)
-    del feature_list; gc.collect()
+    # del feature_list; gc.collect()
     return time_frames_list, new_features_list
 
 

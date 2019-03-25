@@ -36,7 +36,7 @@ class Pipeline(object):
             plt.xlabel('epoch')
             plt.show()
             plt.savefig(model.name + 'loss.pdf')
-        del model_target; gc.collect()
+        #del model_target; gc.collect()
 
     def train_models(self, epochs=10, batch_size=16):
         for target in self.targets:
