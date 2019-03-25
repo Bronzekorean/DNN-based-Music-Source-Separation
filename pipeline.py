@@ -33,7 +33,7 @@ class Pipeline(object):
     def single_track_estimations(self, track):
         estimations = {}
         for counter, target in self.targets:
-            estimations[target] = processing.make_predictions(self.models[counter], target)
+            estimations[target] = processing.make_predictions(self.models[counter], track, target)
         processing.save_estimates(estimations, track, estimates_dir=CONSTS.ESTIMATES_PATH)
 
     def run_estimations(self):
