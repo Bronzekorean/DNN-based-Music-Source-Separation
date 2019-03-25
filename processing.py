@@ -2,6 +2,10 @@ from consts import CONSTS
 from scipy.signal import stft, istft, get_window
 import numpy as np
 import gc
+import os
+import soundfile as sf
+from os import path as op
+
 
 def fourier_transform(audio_track):
     """ extract amplitde and phase from scipy stft:
@@ -12,7 +16,6 @@ def fourier_transform(audio_track):
 
     amplitude, phase = np.absolute(transformed), np.angle(transformed)
     return amplitude, phase
-
 
 
 def differentiate_rescale(phase):
@@ -47,7 +50,7 @@ def make_features(tracks):
     out = list()
     for track in tracks:
         amplitude, phase = fourier_transform(track.audio)
-        out.append((amplitude,differentiate_rescale(phase)))
+        out.append((amplitude, differentiate_rescale(phase)))
     return out
 
 
@@ -71,7 +74,7 @@ def pad_and_delete(feature_list, context=CONSTS.CONTEXT_SIZE):
     return time_frames_list, new_features_list
 
 
-def make_train_input(tracks, context_length=CONSTS.CONTEXT_SIZE):
+def make_input(tracks, context_length=CONSTS.CONTEXT_SIZE):
     time_frames_list, padded_features = pad_and_delete(make_features(tracks), context_length)
     amplitude_out = list()
     phase_out = list()
@@ -96,10 +99,39 @@ def make_target_data(tracks, target):
 
     amplitude_out = amplitude_out.swapaxes(0, 2)
     amplitude_out = amplitude_out.swapaxes(1, 2)
-    return amplitude_out
+    return (amplitude_out - CONSTS.AMPLITUDE_MEAN) / CONSTS.AMPLITUDE_STD
 
 
 def reconstruct(out_amplitude, out_phase):
     """reconstruct output from predicted amplitude and phase"""
-    return istft(out_amplitude * np.exp(1j * out_phase, fs=CONSTS.RATE), nperseg=CONSTS.WINDOW_SIZE,
+    return istft(out_amplitude * np.exp(1j * out_phase), fs=CONSTS.RATE, nperseg=CONSTS.WINDOW_SIZE,
                  noverlap=CONSTS.OVERLAP, freq_axis=0)
+
+
+def make_predictions(model, track, target, context_length=CONSTS.CONTEXT_SIZE):
+
+    _input = make_input([track.targets[target]], context_length=context_length)
+    predictions = model.predict(_input)
+
+    _, phase = fourier_transform(track.targets[target].audio)
+    amplitude = predictions.swapaxes(0, 2)
+    amplitude = amplitude.swapaxes(1, 0)
+    amplitude = amplitude * CONSTS.AMPLITUDE_STD - CONSTS.AMPLITUDE_MEAN
+    _out = reconstruct(amplitude, phase)[1]
+    _out = _out.swapaxes(0, 1)
+
+    return _out
+
+
+def save_estimates(self, user_estimates, track, estimates_dir):
+    track_estimate_dir = op.join(
+        estimates_dir, track.subset, track.filename
+    )
+    if not os.path.exists(track_estimate_dir):
+        os.makedirs(track_estimate_dir)
+
+    # write out tracks to disk
+    for target, estimate in list(user_estimates.items()):
+        target_path = op.join(track_estimate_dir, target + '.wav')
+        sf.write(target_path, estimate, track.rate)
+    pass

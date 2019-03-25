@@ -9,4 +9,6 @@ class CONSTS:
     FFT_BINS = 2049
     TARGETS = ['vocals', 'drums', 'bass', 'other']
     DB_PATH = './DSD100subset'
-    ESTIMATES_PATH = ''
+    ESTIMATES_PATH = './Estimates'
+    AMPLITUDE_MEAN = 0.00049
+    AMPLITUDE_STD = 0.00204

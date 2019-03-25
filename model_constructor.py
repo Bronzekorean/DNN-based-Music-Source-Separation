@@ -2,13 +2,14 @@ import keras
 from consts import CONSTS
 from keras import backend as K
 
-def make_amplitude_layer():
+def make_amplitude_layer(mean=CONSTS.AMPLITUDE_MEAN , std=CONSTS.AMPLITUDE_STD):
     """ creates keras first layer that takes amplitude as input
         Returns:
         amplitude_input: keras input layer takes amplitude
         amplitude_layer: karas architecture untill concatenation"""
     amplitude_input = keras.layers.Input(shape=(CONSTS.FFT_BINS, 2, 11))
     amplitude_layer = keras.layers.Flatten()(amplitude_input)
+    amplitude_layer = keras.layers.Lambda(lambda x: (x - mean)/std)(amplitude_layer)
     amplitude_layer = keras.layers.Dense(500, activation='relu')(amplitude_layer)
     amplitude_layer = keras.layers.Dense(500, activation='relu')(amplitude_layer)
     return amplitude_input, amplitude_layer
