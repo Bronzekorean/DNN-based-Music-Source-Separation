@@ -4,6 +4,7 @@ import processing
 import model_constructor
 import gc
 import keras
+import matplotlib.pyplot as plt
 
 
 class Pipeline(object):
@@ -16,14 +17,25 @@ class Pipeline(object):
         self.models = [model_constructor.make_compile_model(target) for target in self.targets]
         self.models_input = processing.make_input(self.dev_set)
 
-    def train_model(self, target, epochs=10, batch_size=16):
+    def train_model(self, target, epochs=CONSTS.EPOCHS, batch_size=CONSTS.BATCH_SIZE, save_epochs=False, create_plots=True):
         if target not in self.targets:
             raise ValueError('Unexpected target')
         model = self.models[self.targets.index(target)]
         model_target = processing.make_target_data(self.dev_set, target)
         checkpointer = keras.callbacks.ModelCheckpoint(model.name + '_DNN_model', monitor='val_loss', verbose=0,
                                                        save_best_only=False, save_weights_only=False, mode='auto', period=1)
-        model.fit(self.models_input, model_target,  epochs=epochs, batch_size=batch_size, callbacks = [checkpointer])
+        callbacks = None
+        if save_epochs:
+            callbacks = [checkpointer]
+
+        history = model.fit(self.models_input, model_target,  epochs=epochs, batch_size=batch_size, callbacks=callbacks)
+        if create_plots:
+            plt.plot(history.history['loss'])
+            plt.title('model loss')
+            plt.ylabel('loss')
+            plt.xlabel('epoch')
+            plt.show()
+            plt.savefig(model.name + 'loss.pdf')
         del model_target; gc.collect()
 
     def train_models(self, epochs=10, batch_size=16):
@@ -43,5 +55,5 @@ class Pipeline(object):
 
 if __name__ == '__main__':
     pipeline = Pipeline()
-    pipeline.train_models(epochs=100, batch_size=16)
+    pipeline.train_models(epochs=1, batch_size=16)
     pipeline.run_estimations()

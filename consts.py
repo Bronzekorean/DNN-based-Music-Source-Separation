@@ -12,3 +12,5 @@ class CONSTS:
     ESTIMATES_PATH = './Estimates'
     AMPLITUDE_MEAN = 0.00049
     AMPLITUDE_STD = 0.00204
+    EPOCHS = 20
+    BATCH_SIZE = 16
